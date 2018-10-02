@@ -1,0 +1,21 @@
+{
+  "name": "chat-api",
+  "version": "0.0.1",
+  "description": "Interface to WhatsApp Messenger",
+  "main": "index.js",
+  "directories": {
+    "example": "examples"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "WhatsApp",
+    "API"
+  ],
+  "dependencies": {
+    "readline-sync": "*"
+  },
+  "author": "Alex Filippov <main@warl0ck.net> (http://www.warl0ck.net)",
+  "license": "GPL v3"
+}
