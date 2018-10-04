@@ -1,7 +1,8 @@
 'use strict';
 
-const WhatsApiEventsManager = require('events/whatsApiEventsManager'),
-    Constants = require('constants');
+const WhatsApiEventsManager = require('./events/whatsApiEventsManager'),
+    Constants = require('./constants'),
+    Utils = require('./utils');
 
 module.exports = class Registration {
     constructor(number, debug = false, customPath = false) {
@@ -215,30 +216,30 @@ module.exports = class Registration {
     */
     buildIdentity(identity_file = false) {
         const path = require('path'),
-            fs = require('fs');
+            fs = require('fs'),
+            urlencode = require('urlencode');
         if (!identity_file) {
             identity_file = `${__dirname}${path.sep}${Constants.DATA_FOLDER}${path.sep}id.${this.phoneNumber}.dat`;
         }
         // Check if the provided is not a file but a directory
-        if (fs.lstatSync(identity_file).isDirectory()) {
-            identity_file = `${rtrim(identity_file, path.sep)}${path.sep}id.${this.phoneNumber}.dat`;
-        }
-        if ((fs.lstatSync(identity_file) & fs.S_IRUSR) |
-            (fs.lstatSync(identity_file) & fs.S_IRGRP) |
-            (fs.lstatSync(identity_file) & fs.S_IROTH)) {
-            $data = urldecode(file_get_contents($identity_file));
-            $length = strlen($data);
-            if ($length == 20 || $length == 16) {
-                return $data;
+        if (fs.existsSync(identity_file)) {
+            if (fs.lstatSync(identity_file).isDirectory()) {
+                identity_file = `${Utils.rtrim(identity_file, path.sep)}${path.sep}id.${this.phoneNumber}.dat`;
+            }
+            let data = urlencode.decode(fs.readFileSync(identity_file));
+            console.log('r>' + data.length);
+            if (data.length == 20 || data.length == 16) {
+                return data;
             }
         }
-        $bytes = strtolower(openssl_random_pseudo_bytes(20));
-        if (file_put_contents($identity_file, urlencode($bytes)) === false) {
-            throw new Exception('Unable to write identity file to '.$identity_file);
-        }
-        return $bytes;
+        let bytes = Utils.openssl_random_pseudo_bytes(20);
+        console.log('w>' + bytes.length);
+        fs.writeFile(identity_file, urlencode.encode(bytes.toString()), (err) => {
+            if (err) throw new Error(`Unable to write identity file to ${identity_file}`);
+            return bytes;
+        });
     }
-
+    
     /**
    * Print a message to the debug console.
    *

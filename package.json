@@ -14,7 +14,8 @@
     "API"
   ],
   "dependencies": {
-    "readline-sync": "*"
+    "readline-sync": "*",
+    "urlencode": "*"
   },
   "author": "Alex Filippov <main@warl0ck.net> (http://www.warl0ck.net)",
   "license": "GPL v3"

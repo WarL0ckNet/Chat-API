@@ -1,12 +1,9 @@
 'use strict';
 
-const WhatsApiEventsManager = require('./src/events/whatsApiEventsManager');
+const Registration = require('./src/registration');
 
-let w = new WhatsApiEventsManager();
-
-let add = (a, b) => {
-    return a + b;
+try {
+    let w = new Registration('79134547579', true);
+} catch (e) {
+    console.error(e.message);
 }
-
-w.bind('add', add);
-console.log(w.fire('add', [2, 3]));
