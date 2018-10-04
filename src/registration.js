@@ -93,6 +93,92 @@ module.exports = class Registration {
     }
 
     /**
+   * Register account on WhatsApp using the provided code.
+   *
+   * @param int $code
+   *   Numeric code value provided on requestCode().
+   *
+   * @throws Exception
+   *
+   * @return object
+   *   An object with server response.
+   *   - status: Account status.
+   *   - login: Phone number with country code.
+   *   - pw: Account password.
+   *   - type: Type of account.
+   *   - expiration: Expiration date in UNIX TimeStamp.
+   *   - kind: Kind of account.
+   *   - price: Formatted price of account.
+   *   - cost: Decimal amount of account.
+   *   - currency: Currency price of account.
+   *   - price_expiration: Price expiration in UNIX TimeStamp.
+   */
+    codeRegister(code) {
+        let phone = this.dissectPhone();
+        if (!phone) {
+            throw new Error('The provided phone number is not valid.');
+        }
+        const crypto = require('crypto');
+        code = code.replace('-', '');
+        let countryCode = (phone.ISO3166 != '' ? phone.ISO3166 : 'US');
+        let langCode = (phone.ISO639 != '' ? phone.ISO639 : 'en');
+        // Build the url.
+        let host = `https://${Constants.WHATSAPP_REGISTER_HOST}`;
+        let query = {
+            cc: phone.cc,
+            in: phone.phone,
+            lg: langCode,
+            lc: countryCode,
+            id: this.identity,
+            mistyped: '6',
+            network_radio_type: '1',
+            simnum: '1',
+            s: '',
+            copiedrc: '1',
+            hasinrc: '1',
+            rcmatch: '1',
+            pid: 100 + Math.floor(9900 * Math.random()),
+            rchash: crypto.createHash('sha256').update(crypto.randomBytes(20)),
+            anhash: crypto.createHash('md5').update(crypto.randomBytes(20)),
+            extexist: '1',
+            extstate: '1',
+            code: code,
+        };
+        this.debugPrint(query);
+        response = this.getResponse(host, query);
+        this.debugPrint(response);
+
+        if (response.status != 'ok') {
+            this.eventManager().fire('onCodeRegisterFailed',
+                [
+                    this.phoneNumber,
+                    response.status,
+                    response.reason,
+                    (response.retry_after ? response.retry_after : null),
+                ]);
+            if (response.reason == 'old_version') {
+                this.update();
+            }
+            throw new Error(`An error occurred registering the registration code from WhatsApp. Reason: ${response.reason}`);
+        } else {
+            this.eventManager().fire('onCodeRegister',
+                [
+                    this.phoneNumber,
+                    response.login,
+                    response.pw,
+                    response.type,
+                    response.expiration,
+                    response.kind,
+                    response.price,
+                    response.cost,
+                    response.currency,
+                    response.price_expiration,
+                ]);
+        }
+        return response;
+    }
+
+    /**
    * Get a decoded JSON response from Whatsapp server.
    *
    * @param  string $host  The host URL
@@ -112,7 +198,7 @@ module.exports = class Registration {
                 'Accept': 'text/json'
             }
         };
-        const req = http.request(options, (res) => {
+        const req = http.request(options, (res) : {
             let response;
             res.setEncoding('utf8');
             console.log(`STATUS: ${res.statusCode}`);
@@ -239,7 +325,7 @@ module.exports = class Registration {
             return bytes;
         });
     }
-    
+
     /**
    * Print a message to the debug console.
    *
