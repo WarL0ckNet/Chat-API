@@ -18,7 +18,7 @@ if ((/\D+/).test(username)) {
 
 identityExists = fs.existsSync(`../src/wadata/id.${username}.dat`);
 let w = new Registration(username, debug);
-if (identityExists) {
+if (! identityExists) {
     let option = readline.question("\nType sms or voice: ");
     try {
         w.codeRequest(option.trim());

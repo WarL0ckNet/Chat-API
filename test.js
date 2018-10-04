@@ -1,15 +1,13 @@
 'use strict';
+const fs = require('fs'),
+path = require('path'),
+readline = require('readline');
 
-/*
-const Registration = require('./src/registration');
+let rd = readline.createInterface({
+    input: fs.createReadStream(`${__dirname}${path.sep}src${path.sep}countries.csv`)
+});
 
-try {
-    let w = new Registration('79134547579', true);
-} catch (e) {
-    console.error(e.message);
-}
-*/
-
-const crypto = require('crypto');
-
-console.log(crypto.createHash('md5').update(crypto.randomBytes(20)).digest('hex'));
+rd.on('line', (line) => {
+    let data = line.replace(/"/g,'').split(',');
+    console.log(data);
+});

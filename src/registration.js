@@ -2,7 +2,13 @@
 
 const WhatsApiEventsManager = require('./events/whatsApiEventsManager'),
     Constants = require('./constants'),
-    Utils = require('./utils');
+    Token = require('./token'),
+    Utils = require('./utils'),
+    crypto = require('crypto'),
+    path = require('path'),
+    qs = require('querystring'),
+    fs = require('fs'),
+    readline = require('readline');
 
 module.exports = class Registration {
     constructor(number, debug = false, customPath = false) {
@@ -57,8 +63,8 @@ module.exports = class Registration {
             hasinrc: '1',
             rcmatch: '1',
             pid: 100 + Math.floor(9900 * Math.random()),
-            //'rchash' => hash('sha256', openssl_random_pseudo_bytes(20)),
-            //'anhash' => md5(openssl_random_pseudo_bytes(20)),
+            //'rchash' : hash('sha256', openssl_random_pseudo_bytes(20)),
+            //'anhash' : md5(openssl_random_pseudo_bytes(20)),
             extexist: '1',
             extstate: '1'
         };
@@ -67,7 +73,7 @@ module.exports = class Registration {
         this.debugPrint(response);
 
         if (response.status != 'ok') {
-            this.eventManager().fire('onCredentialsBad',
+            this.eventManager.fire('onCredentialsBad',
                 [
                     this.phoneNumber,
                     response.status,
@@ -75,7 +81,7 @@ module.exports = class Registration {
                 ]);
             throw new Error('There was a problem trying to request the code.');
         } else {
-            this.eventManager().fire('onCredentialsGood',
+            this.eventManager.fire('onCredentialsGood',
                 [
                     this.phoneNumber,
                     response.login,
@@ -118,8 +124,7 @@ module.exports = class Registration {
         if (!phone) {
             throw new Error('The provided phone number is not valid.');
         }
-        const crypto = require('crypto');
-        code = code.replace('-', '');
+        code = code.replace(/-/g, '');
         let countryCode = (phone.ISO3166 != '' ? phone.ISO3166 : 'US');
         let langCode = (phone.ISO639 != '' ? phone.ISO639 : 'en');
         // Build the url.
@@ -138,8 +143,8 @@ module.exports = class Registration {
             hasinrc: '1',
             rcmatch: '1',
             pid: 100 + Math.floor(9900 * Math.random()),
-            rchash: crypto.createHash('sha256').update(crypto.randomBytes(20)),
-            anhash: crypto.createHash('md5').update(crypto.randomBytes(20)),
+            rchash: crypto.createHash('sha256').update(crypto.randomBytes(20)).digest(),
+            anhash: crypto.createHash('md5').update(crypto.randomBytes(20)).digest(),
             extexist: '1',
             extstate: '1',
             code: code,
@@ -149,7 +154,7 @@ module.exports = class Registration {
         this.debugPrint(response);
 
         if (response.status != 'ok') {
-            this.eventManager().fire('onCodeRegisterFailed',
+            this.eventManager.fire('onCodeRegisterFailed',
                 [
                     this.phoneNumber,
                     response.status,
@@ -161,7 +166,7 @@ module.exports = class Registration {
             }
             throw new Error(`An error occurred registering the registration code from WhatsApp. Reason: ${response.reason}`);
         } else {
-            this.eventManager().fire('onCodeRegister',
+            this.eventManager.fire('onCodeRegister',
                 [
                     this.phoneNumber,
                     response.login,
@@ -179,6 +184,124 @@ module.exports = class Registration {
     }
 
     /**
+   * Request a registration code from WhatsApp.
+   *
+   * @param string $method Accepts only 'sms' or 'voice' as a value.
+   * @param string $carrier
+   *
+   * @throws Exception
+   *
+   * @return object
+   *   An object with server response.
+   *   - status: Status of the request (sent/fail).
+   *   - length: Registration code lenght.
+   *   - method: Used method.
+   *   - reason: Reason of the status (e.g. too_recent/missing_param/bad_param).
+   *   - param: The missing_param/bad_param.
+   *   - retry_after: Waiting time before requesting a new code.
+   */
+    codeRequest(method = 'sms', carrier = 'T-Mobile5', platform = 'Android') {
+        let phone = this.dissectPhone();
+        if (!phone) {
+            throw new Error('The provided phone number is not valid.');
+        }
+        let countryCode = (phone.ISO3166 != '' ? phone.ISO3166 : 'US');
+        let langCode = (phone.ISO639 != '' ? phone.ISO639 : 'en');
+        if (carrier != null) {
+            mnc = this.detectMnc(countryCode.toLowerCase(), carrier);
+        } else {
+            mnc = phone.mnc;
+        }
+        // Build the token.
+        token = Token.generateRequestToken(phone.country, phone.phone, platform);
+        // Build the url.
+        let host = `https://${Constants.WHATSAPP_REQUEST_HOST}`;
+        let query = {
+            cc: phone.cc,
+            in: phone.phone,
+            lg: langCode,
+            lc: countryCode,
+            id: this.identity,
+            token: token,
+            mistyped: '6',
+            network_radio_type: '1',
+            simnum: '1',
+            s: '',
+            copiedrc: '1',
+            hasinrc: '1',
+            rcmatch: '1',
+            pid: 100 + Math.floor(9900 * Math.random()),
+            rchash: crypto.createHash('sha256').update(crypto.randomBytes(20)).digest(),
+            anhash: crypto.createHash('md5').update(crypto.randomBytes(20)).digest(),
+            extexist: '1',
+            extstate: '1',
+            mcc: phone.mcc,
+            mnc: mnc,
+            sim_mcc: phone.mcc,
+            sim_mnc: mnc,
+            method: method
+            //reason : "self-send-jailbroken",
+        };
+        this.debugPrint(query);
+        response = this.getResponse(host, query);
+        this.debugPrint(response);
+        if (response.status == 'ok') {
+            this.eventManager.fire('onCodeRegister',
+                [
+                    this.phoneNumber,
+                    response.login,
+                    response.pw,
+                    response.type,
+                    response.expiration,
+                    response.kind,
+                    response.price,
+                    response.cost,
+                    response.currency,
+                    response.price_expiration
+                ]);
+        } else if (response.status != 'sent') {
+            if (response.reason && response.reason == 'too_recent') {
+                this.eventManager.fire('onCodeRequestFailedTooRecent',
+                    [
+                        this.phoneNumber,
+                        method,
+                        response.reason,
+                        response.retry_after
+                    ]);
+                minutes = Math.round(response.retry_after / 60);
+                throw new Error(`Code already sent. Retry after ${minutes} minutes.`);
+            } else if (response.reason && response.reason == 'too_many_guesses') {
+                this.eventManager.fire('onCodeRequestFailedTooManyGuesses',
+                    [
+                        this.phoneNumber,
+                        method,
+                        response.reason,
+                        response.retry_after
+                    ]);
+                minutes = Math.round(response.retry_after / 60);
+                throw new Error(`Too many guesses. Retry after ${minutes} minutes.`);
+            } else {
+                this.eventManager.fire('onCodeRequestFailed',
+                    [
+                        this.phoneNumber,
+                        method,
+                        response.reason,
+                        (response.param ? response.param : null)
+                    ]);
+                throw new Error('There was a problem trying to request the code.');
+            }
+        } else {
+            this.eventManager.fire('onCodeRequest',
+                [
+                    this.phoneNumber,
+                    method,
+                    response.length,
+                ]);
+        }
+        return response;
+    }
+
+    /**
    * Get a decoded JSON response from Whatsapp server.
    *
    * @param  string $host  The host URL
@@ -187,8 +310,7 @@ module.exports = class Registration {
    * @return null|object   NULL if the json cannot be decoded or if the encoded data is deeper than the recursion limit
    */
     getResponse(host, query) {
-        const qs = require('querystring'),
-            http = require('http');
+        const http = require('http');
         let options = {
             host,
             path: `?${qs.stringify(query)}`,
@@ -198,7 +320,7 @@ module.exports = class Registration {
                 'Accept': 'text/json'
             }
         };
-        const req = http.request(options, (res) : {
+        const req = http.request(options, (res) => {
             let response;
             res.setEncoding('utf8');
             console.log(`STATUS: ${res.statusCode}`);
@@ -207,24 +329,9 @@ module.exports = class Registration {
                 response += chunk;
             });
             res.on('end', () => {
-                console.log('No more data in response.');
+                return JSON.parse(response);
             });
         });
-        // Open connection.
-        $ch = curl_init();
-        // Configure the connection.
-        curl_setopt($ch, CURLOPT_URL, $url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_HEADER, 0);
-        curl_setopt($ch, CURLOPT_USERAGENT, Constants:: WHATSAPP_USER_AGENT);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, ['Accept: text/json']);
-        // This makes CURL accept any peer!
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-        // Get the response.
-        $response = curl_exec($ch);
-        // Close the connection.
-        curl_close($ch);
-        return json_decode($response);
     }
 
     /**
@@ -240,17 +347,14 @@ module.exports = class Registration {
      *   Return false if country code is not found.
      */
     dissectPhone() {
-        const fs = require('fs'),
-            readline = require('readline');
-
         let rd = readline.createInterface({
-            input: fs.createReadStream(__dirname + '/countries.csv'),
-            output: process.stdout,
-            console: false
+            input: fs.createReadStream(`${__dirname}${path.sep}countries.csv`)
         });
 
         rd.on('line', (line) => {
-            data = line.replace('"', '').split(',');
+            console.log(line);
+            let data = line.replace(/"/g, '').split(',');
+            console.log(data);
             if (this.phoneNumber.indexOf(data[1]) === 0) {
                 // Return the first appearance.
                 let mcc = data[2].split('|');
@@ -269,7 +373,7 @@ module.exports = class Registration {
                     ISO639: data[4],
                     mnc: data[5]
                 };
-                this.eventManager().fire('onDissectPhone',
+                this.eventManager.fire('onDissectPhone',
                     [
                         this.phoneNumber,
                         phone.country,
@@ -283,12 +387,57 @@ module.exports = class Registration {
                 );
                 return phone;
             }
+        })/*.on('close', () => {
+            this.eventManager.fire('onDissectPhoneFailed',
+                [
+                    this.phoneNumber,
+                ]);
+            return false;
+        })*/;
+    }
+
+    /**
+    * Detects mnc from specified carrier.
+    *
+    * @param string $lc          LangCode
+    * @param string $carrierName Name of the carrier
+    *
+    * @return string
+    *
+    * Returns mnc value
+    */
+    detectMnc(lc, carrierName) {
+        let rd = readline.createInterface({
+            input: fs.createReadStream(`${__dirname}${path.sep}networkinfo.csv`)
         });
-        this.eventManager().fire('onDissectPhoneFailed',
-            [
-                this.phoneNumber,
-            ]);
-        return false;
+
+        let mnc = null;
+        rd.on('line', (line) => {
+            data = line.replace(/"/g, '').split(',');
+            if (data[4] === lc && data[7] === carrierName) {
+                mnc = data[2];
+                break;
+            }
+        });
+        if (mnc == null) {
+            mnc = '000';
+        }
+        return $mnc;
+    }
+
+    update() {
+        const https = require('https');
+        https.get(Constants.WHATSAPP_VER_CHECKER, (res) => {
+            res.on('data', (d) => {
+                let WAData = JSON.parse(d.toString());
+                if (Constants.WHATSAPP_VER != WAData.d) {
+                    console.log(`Update token.js: ${WAData.a}`);
+                    console.log(`Update constants.js: ${WAData.d}`);
+                }
+            });
+        }).on('error', (e) => {
+            console.error(e);
+        });
     }
 
     /**
@@ -302,8 +451,7 @@ module.exports = class Registration {
     */
     buildIdentity(identity_file = false) {
         const path = require('path'),
-            fs = require('fs'),
-            urlencode = require('urlencode');
+            fs = require('fs');
         if (!identity_file) {
             identity_file = `${__dirname}${path.sep}${Constants.DATA_FOLDER}${path.sep}id.${this.phoneNumber}.dat`;
         }
@@ -312,39 +460,30 @@ module.exports = class Registration {
             if (fs.lstatSync(identity_file).isDirectory()) {
                 identity_file = `${Utils.rtrim(identity_file, path.sep)}${path.sep}id.${this.phoneNumber}.dat`;
             }
-            let data = urlencode.decode(fs.readFileSync(identity_file));
-            console.log('r>' + data.length);
+            let data = decodeURI(fs.readFileSync(identity_file));
             if (data.length == 20 || data.length == 16) {
                 return data;
             }
         }
-        let bytes = Utils.openssl_random_pseudo_bytes(20);
-        console.log('w>' + bytes.length);
-        fs.writeFile(identity_file, urlencode.encode(bytes.toString()), (err) => {
+        let bytes = crypto.randomBytes(20);
+        fs.writeFile(identity_file, encodeURI(bytes.toString().toLowerCase()), (err) => {
             if (err) throw new Error(`Unable to write identity file to ${identity_file}`);
             return bytes;
         });
     }
 
     /**
-   * Print a message to the debug console.
-   *
-   * @param  mixed $debugMsg The debug message.
-   *
-   * @return bool
-   */
+    * Print a message to the debug console.
+    *
+    * @param  mixed $debugMsg The debug message.
+    *
+    * @return bool
+    */
     debugPrint(debugMsg) {
         if (this.debug) {
             console.debug(JSON.stringify(debugMsg, null, 2));
             return true;
         }
         return false;
-    }
-
-    /**
-     * @return WhatsApiEventsManager
-     */
-    get eventManager() {
-        return this.eventManager;
     }
 }

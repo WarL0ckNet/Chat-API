@@ -17,7 +17,7 @@ module.exports = {
     WHATSAPP_REQUEST_HOST: 'v.whatsapp.net/v2/code',                                  // The request code host.
     WHATSAPP_SERVER: 's.whatsapp.net',                                                // The hostname used to login/send messages.
     DEVICE: 'armani',                                                                 // The device name.
-    WHATSAPP_VER: '2.16.148',                                                         // The WhatsApp version.
+    WHATSAPP_VER: '2.18.302',                                                         // The WhatsApp version.
     OS_VERSION: '4.3',
     MANUFACTURER: 'Xiaomi',
     BUILD_VERSION: 'JLS36C',
