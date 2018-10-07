@@ -8,7 +8,7 @@ const WhatsApiEventsManager = require('./events/whatsApiEventsManager'),
     path = require('path'),
     qs = require('querystring'),
     fs = require('fs'),
-    readline = require('readline');
+    csv = require('csvtojson');
 
 module.exports = class Registration {
     constructor(number, debug = false, customPath = false) {
@@ -200,20 +200,21 @@ module.exports = class Registration {
    *   - param: The missing_param/bad_param.
    *   - retry_after: Waiting time before requesting a new code.
    */
-    codeRequest(method = 'sms', carrier = 'T-Mobile5', platform = 'Android') {
+    codeRequest(method = 'sms', carrier = 'MTS', platform = 'Android') {
         let phone = this.dissectPhone();
         if (!phone) {
             throw new Error('The provided phone number is not valid.');
         }
-        let countryCode = (phone.ISO3166 != '' ? phone.ISO3166 : 'US');
-        let langCode = (phone.ISO639 != '' ? phone.ISO639 : 'en');
+        let countryCode = (phone.ISO3166 != '' ? phone.ISO3166 : 'US'),
+            langCode = (phone.ISO639 != '' ? phone.ISO639 : 'en'),
+            mnc;
         if (carrier != null) {
             mnc = this.detectMnc(countryCode.toLowerCase(), carrier);
         } else {
             mnc = phone.mnc;
         }
         // Build the token.
-        token = Token.generateRequestToken(phone.country, phone.phone, platform);
+        let token = Token.generateRequestToken(phone.country, phone.phone, platform);
         // Build the url.
         let host = `https://${Constants.WHATSAPP_REQUEST_HOST}`;
         let query = {
@@ -243,7 +244,7 @@ module.exports = class Registration {
             //reason : "self-send-jailbroken",
         };
         this.debugPrint(query);
-        response = this.getResponse(host, query);
+        let response = this.getResponse(host, query);
         this.debugPrint(response);
         if (response.status == 'ok') {
             this.eventManager.fire('onCodeRegister',
@@ -268,7 +269,7 @@ module.exports = class Registration {
                         response.reason,
                         response.retry_after
                     ]);
-                minutes = Math.round(response.retry_after / 60);
+                let minutes = Math.round(response.retry_after / 60);
                 throw new Error(`Code already sent. Retry after ${minutes} minutes.`);
             } else if (response.reason && response.reason == 'too_many_guesses') {
                 this.eventManager.fire('onCodeRequestFailedTooManyGuesses',
@@ -278,7 +279,7 @@ module.exports = class Registration {
                         response.reason,
                         response.retry_after
                     ]);
-                minutes = Math.round(response.retry_after / 60);
+                let minutes = Math.round(response.retry_after / 60);
                 throw new Error(`Too many guesses. Retry after ${minutes} minutes.`);
             } else {
                 this.eventManager.fire('onCodeRequestFailed',
@@ -310,22 +311,22 @@ module.exports = class Registration {
    * @return null|object   NULL if the json cannot be decoded or if the encoded data is deeper than the recursion limit
    */
     getResponse(host, query) {
-        const http = require('http');
+        const https = require('https');
         let options = {
             host,
             path: `?${qs.stringify(query)}`,
             method: 'GET',
-            agent: Constants.WHATSAPP_USER_AGENT,
             headers: {
+                'User-Agent': Constants.WHATSAPP_USER_AGENT,
                 'Accept': 'text/json'
             }
         };
-        const req = http.request(options, (res) => {
+        console.log(options);
+        const req = https.request(options, (res) => {
             let response;
             res.setEncoding('utf8');
-            console.log(`STATUS: ${res.statusCode}`);
-            console.log(`HEADERS: ${JSON.stringify(res.headers)}`);
             res.on('data', (chunk) => {
+                console.log(chunk);
                 response += chunk;
             });
             res.on('end', () => {
@@ -347,14 +348,10 @@ module.exports = class Registration {
      *   Return false if country code is not found.
      */
     dissectPhone() {
-        let rd = readline.createInterface({
-            input: fs.createReadStream(`${__dirname}${path.sep}countries.csv`)
-        });
-
-        rd.on('line', (line) => {
-            console.log(line);
-            let data = line.replace(/"/g, '').split(',');
-            console.log(data);
+        let contents = fs.readFileSync(`${__dirname}${path.sep}countries.csv`);
+        let lines = contents.toString().split(/\n/);
+        for (let i in lines) {
+            let data = lines[i].replace(/"/g, '').split(/,/);
             if (this.phoneNumber.indexOf(data[1]) === 0) {
                 // Return the first appearance.
                 let mcc = data[2].split('|');
@@ -387,13 +384,12 @@ module.exports = class Registration {
                 );
                 return phone;
             }
-        })/*.on('close', () => {
-            this.eventManager.fire('onDissectPhoneFailed',
-                [
-                    this.phoneNumber,
-                ]);
-            return false;
-        })*/;
+        }
+        this.eventManager.fire('onDissectPhoneFailed',
+            [
+                this.phoneNumber,
+            ]);
+        return false;
     }
 
     /**
@@ -407,22 +403,20 @@ module.exports = class Registration {
     * Returns mnc value
     */
     detectMnc(lc, carrierName) {
-        let rd = readline.createInterface({
-            input: fs.createReadStream(`${__dirname}${path.sep}networkinfo.csv`)
-        });
-
+        let contents = fs.readFileSync(`${__dirname}${path.sep}networkinfo.csv`);
+        let lines = contents.toString().split(/\n/);
         let mnc = null;
-        rd.on('line', (line) => {
-            data = line.replace(/"/g, '').split(',');
+        for (let i in lines) {
+            let data = lines[i].replace(/"/g, '').split(/,/);
             if (data[4] === lc && data[7] === carrierName) {
                 mnc = data[2];
                 break;
             }
-        });
-        if (mnc == null) {
+        }
+        if (!mnc) {
             mnc = '000';
         }
-        return $mnc;
+        return mnc;
     }
 
     update() {
