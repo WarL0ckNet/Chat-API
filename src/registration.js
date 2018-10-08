@@ -53,7 +53,7 @@ module.exports = class Registration {
             in: phone.phone,
             lg: langCode,
             lc: countryCode,
-            id: this.identity,
+            id: this.identity.toString(),
             mistyped: '6',
             network_radio_type: '1',
             simnum: '1',
@@ -68,33 +68,35 @@ module.exports = class Registration {
             extstate: '1'
         };
         this.debugPrint(query);
-        let response = this.getResponse(host, query);
-        this.debugPrint(response);
-
-        if (response.status != 'ok') {
-            this.eventManager.fire('onCredentialsBad',
-                [
-                    this.phoneNumber,
-                    response.status,
-                    response.reason,
-                ]);
-            throw new Error('There was a problem trying to request the code.');
-        } else {
-            this.eventManager.fire('onCredentialsGood',
-                [
-                    this.phoneNumber,
-                    response.login,
-                    response.pw,
-                    response.type,
-                    response.expiration,
-                    response.kind,
-                    response.price,
-                    response.cost,
-                    response.currency,
-                    response.price_expiration
-                ]);
-        }
-        return response;
+        this.getResponse(host, query).then(result => {
+            this.debugPrint(result);
+            if (result.status != 'ok') {
+                this.eventManager.fire('onCredentialsBad',
+                    [
+                        this.phoneNumber,
+                        result.status,
+                        result.reason,
+                    ]);
+                console.error('There was a problem trying to request the code.');
+            } else {
+                this.eventManager.fire('onCredentialsGood',
+                    [
+                        this.phoneNumber,
+                        result.login,
+                        result.pw,
+                        result.type,
+                        result.expiration,
+                        result.kind,
+                        result.price,
+                        result.cost,
+                        result.currency,
+                        result.price_expiration
+                    ]);
+            }
+            return result;
+        }, reject => {
+            console.error(reject);
+        });
     }
 
     /**
@@ -133,7 +135,7 @@ module.exports = class Registration {
             in: phone.phone,
             lg: langCode,
             lc: countryCode,
-            id: this.identity,
+            id: this.identity.toString(),
             mistyped: '6',
             network_radio_type: '1',
             simnum: '1',
@@ -149,37 +151,39 @@ module.exports = class Registration {
             code: code,
         };
         this.debugPrint(query);
-        response = this.getResponse(host, query);
-        this.debugPrint(response);
-
-        if (response.status != 'ok') {
-            this.eventManager.fire('onCodeRegisterFailed',
-                [
-                    this.phoneNumber,
-                    response.status,
-                    response.reason,
-                    (response.retry_after ? response.retry_after : null),
-                ]);
-            if (response.reason == 'old_version') {
-                this.update();
+        this.getResponse(host, query).then(result => {
+            this.debugPrint(result);
+            if (result.status != 'ok') {
+                this.eventManager.fire('onCodeRegisterFailed',
+                    [
+                        this.phoneNumber,
+                        result.status,
+                        result.reason,
+                        (result.retry_after ? result.retry_after : null),
+                    ]);
+                if (result.reason == 'old_version') {
+                    this.update();
+                }
+                console.error(`An error occurred registering the registration code from WhatsApp. Reason: ${result.reason}`);
+            } else {
+                this.eventManager.fire('onCodeRegister',
+                    [
+                        this.phoneNumber,
+                        result.login,
+                        result.pw,
+                        result.type,
+                        result.expiration,
+                        result.kind,
+                        result.price,
+                        result.cost,
+                        result.currency,
+                        result.price_expiration,
+                    ]);
             }
-            throw new Error(`An error occurred registering the registration code from WhatsApp. Reason: ${response.reason}`);
-        } else {
-            this.eventManager.fire('onCodeRegister',
-                [
-                    this.phoneNumber,
-                    response.login,
-                    response.pw,
-                    response.type,
-                    response.expiration,
-                    response.kind,
-                    response.price,
-                    response.cost,
-                    response.currency,
-                    response.price_expiration,
-                ]);
-        }
-        return response;
+            return result;
+        }, reject => {
+            console.error(reject);
+        });
     }
 
     /**
@@ -243,64 +247,66 @@ module.exports = class Registration {
             //reason : "self-send-jailbroken",
         };
         this.debugPrint(query);
-        let response = this.getResponse(host, query);
-        this.debugPrint(response);
-        if (response.status == 'ok') {
-            this.eventManager.fire('onCodeRegister',
-                [
-                    this.phoneNumber,
-                    response.login,
-                    response.pw,
-                    response.type,
-                    response.expiration,
-                    response.kind,
-                    response.price,
-                    response.cost,
-                    response.currency,
-                    response.price_expiration
-                ]);
-        } else if (response.status != 'sent') {
-            if (response.reason && response.reason == 'too_recent') {
-                this.eventManager.fire('onCodeRequestFailedTooRecent',
+        this.getResponse(host, query).then(result => {
+            this.debugPrint(result);
+            if (result.status == 'ok') {
+                this.eventManager.fire('onCodeRegister',
                     [
                         this.phoneNumber,
-                        method,
-                        response.reason,
-                        response.retry_after
+                        result.login,
+                        result.pw,
+                        result.type,
+                        result.expiration,
+                        result.kind,
+                        result.price,
+                        result.cost,
+                        result.currency,
+                        result.price_expiration
                     ]);
-                let minutes = Math.round(response.retry_after / 60);
-                throw new Error(`Code already sent. Retry after ${minutes} minutes.`);
-            } else if (response.reason && response.reason == 'too_many_guesses') {
-                this.eventManager.fire('onCodeRequestFailedTooManyGuesses',
-                    [
-                        this.phoneNumber,
-                        method,
-                        response.reason,
-                        response.retry_after
-                    ]);
-                let minutes = Math.round(response.retry_after / 60);
-                throw new Error(`Too many guesses. Retry after ${minutes} minutes.`);
+            } else if (result.status != 'sent') {
+                if (result.reason && result.reason == 'too_recent') {
+                    this.eventManager.fire('onCodeRequestFailedTooRecent',
+                        [
+                            this.phoneNumber,
+                            method,
+                            result.reason,
+                            result.retry_after
+                        ]);
+                    let minutes = Math.round(result.retry_after / 60);
+                    console.error(`Code already sent. Retry after ${minutes} minutes.`);
+                } else if (result.reason && result.reason == 'too_many_guesses') {
+                    this.eventManager.fire('onCodeRequestFailedTooManyGuesses',
+                        [
+                            this.phoneNumber,
+                            method,
+                            result.reason,
+                            result.retry_after
+                        ]);
+                    let minutes = Math.round(result.retry_after / 60);
+                    console.error(`Too many guesses. Retry after ${minutes} minutes.`);
+                } else {
+                    this.eventManager.fire('onCodeRequestFailed',
+                        [
+                            this.phoneNumber,
+                            method,
+                            result.reason,
+                            (result.param ? result.param : null)
+                        ]);
+                    console.error('There was a problem trying to request the code.');
+                }
             } else {
-                this.eventManager.fire('onCodeRequestFailed',
+                this.eventManager.fire('onCodeRequest',
                     [
                         this.phoneNumber,
                         method,
-                        response.reason,
-                        (response.param ? response.param : null)
+                        result.length,
                     ]);
-                throw new Error('There was a problem trying to request the code.');
             }
-        } else {
-            this.eventManager.fire('onCodeRequest',
-                [
-                    this.phoneNumber,
-                    method,
-                    response.length,
-                ]);
-        }
-        return response;
+            return result;
+        }, reject => {
+            console.error(reject);
+        });
     }
-
     /**
    * Get a decoded JSON response from Whatsapp server.
    *
@@ -310,29 +316,26 @@ module.exports = class Registration {
    * @return null|object   NULL if the json cannot be decoded or if the encoded data is deeper than the recursion limit
    */
     getResponse(host, query) {
-        const https = require('https'),
-            url = `${host}?${qs.stringify(query, null, null, { decodeURIComponent: null })}`;
-        let options = {
-            headers: {
-                'User-Agent': Constants.WHATSAPP_USER_AGENT,
-                'Accept': 'text/json'
-            }
-        };
-        console.log(url);
-        let req = https.get(host, options, (res) => {
-            let response;
-            console.log('res');
-            res.on('data', (chunk) => {
-                console.log('data>' + chunk);
-                response += chunk;
+        return new Promise((resolve, reject) => {
+            const https = require('https'),
+                url = require('url');
+            let adr = url.parse(`${host}?${qs.stringify(query)}`),
+                options = {
+                    hostname: adr.hostname,
+                    port: adr.port,
+                    protocol: adr.protocol,
+                    path: adr.path,
+                    method: 'GET'
+                };
+            const req = https.request(options, (res) => {
+                res.on('data', (d) => {
+                    resolve(JSON.parse(d));
+                });
             });
-            res.on('end', () => {
-                return JSON.parse(response);
+            req.end();
+            req.on('error', (err) => {
+                reject(err);
             });
-        });
-        req.end();
-        req.on('error', (err) => {
-            console.error(err);
         });
     }
 
