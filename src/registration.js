@@ -7,8 +7,7 @@ const WhatsApiEventsManager = require('./events/whatsApiEventsManager'),
     crypto = require('crypto'),
     path = require('path'),
     qs = require('querystring'),
-    fs = require('fs'),
-    csv = require('csvtojson');
+    fs = require('fs');
 
 module.exports = class Registration {
     constructor(number, debug = false, customPath = false) {
@@ -143,8 +142,8 @@ module.exports = class Registration {
             hasinrc: '1',
             rcmatch: '1',
             pid: 100 + Math.floor(9900 * Math.random()),
-            rchash: crypto.createHash('sha256').update(crypto.randomBytes(20)).digest(),
-            anhash: crypto.createHash('md5').update(crypto.randomBytes(20)).digest(),
+            rchash: crypto.createHash('sha256').update(crypto.randomBytes(20)).digest('base64'),
+            anhash: crypto.createHash('md5').update(crypto.randomBytes(20)).digest('hex'),
             extexist: '1',
             extstate: '1',
             code: code,
@@ -222,7 +221,7 @@ module.exports = class Registration {
             in: phone.phone,
             lg: langCode,
             lc: countryCode,
-            id: this.identity,
+            id: this.identity.toString(),
             token: token,
             mistyped: '6',
             network_radio_type: '1',
@@ -232,8 +231,8 @@ module.exports = class Registration {
             hasinrc: '1',
             rcmatch: '1',
             pid: 100 + Math.floor(9900 * Math.random()),
-            rchash: crypto.createHash('sha256').update(crypto.randomBytes(20)).digest(),
-            anhash: crypto.createHash('md5').update(crypto.randomBytes(20)).digest(),
+            rchash: crypto.createHash('sha256').update(crypto.randomBytes(20)).digest('base64'),
+            anhash: crypto.createHash('md5').update(crypto.randomBytes(20)).digest('hex'),
             extexist: '1',
             extstate: '1',
             mcc: phone.mcc,
@@ -311,27 +310,29 @@ module.exports = class Registration {
    * @return null|object   NULL if the json cannot be decoded or if the encoded data is deeper than the recursion limit
    */
     getResponse(host, query) {
-        const https = require('https');
+        const https = require('https'),
+            url = `${host}?${qs.stringify(query, null, null, { decodeURIComponent: null })}`;
         let options = {
-            host,
-            path: `?${qs.stringify(query)}`,
-            method: 'GET',
             headers: {
                 'User-Agent': Constants.WHATSAPP_USER_AGENT,
                 'Accept': 'text/json'
             }
         };
-        console.log(options);
-        const req = https.request(options, (res) => {
+        console.log(url);
+        let req = https.get(host, options, (res) => {
             let response;
-            res.setEncoding('utf8');
+            console.log('res');
             res.on('data', (chunk) => {
-                console.log(chunk);
+                console.log('data>' + chunk);
                 response += chunk;
             });
             res.on('end', () => {
                 return JSON.parse(response);
             });
+        });
+        req.end();
+        req.on('error', (err) => {
+            console.error(err);
         });
     }
 
@@ -446,6 +447,7 @@ module.exports = class Registration {
     buildIdentity(identity_file = false) {
         const path = require('path'),
             fs = require('fs');
+        let data;
         if (!identity_file) {
             identity_file = `${__dirname}${path.sep}${Constants.DATA_FOLDER}${path.sep}id.${this.phoneNumber}.dat`;
         }
@@ -454,16 +456,18 @@ module.exports = class Registration {
             if (fs.lstatSync(identity_file).isDirectory()) {
                 identity_file = `${Utils.rtrim(identity_file, path.sep)}${path.sep}id.${this.phoneNumber}.dat`;
             }
-            let data = decodeURI(fs.readFileSync(identity_file));
+            data = qs.unescape(fs.readFileSync(identity_file));
             if (data.length == 20 || data.length == 16) {
                 return data;
             }
         }
-        let bytes = crypto.randomBytes(20);
-        fs.writeFile(identity_file, encodeURI(bytes.toString().toLowerCase()), (err) => {
-            if (err) throw new Error(`Unable to write identity file to ${identity_file}`);
-            return bytes;
-        });
+        data = crypto.randomBytes(20);
+        try {
+            fs.writeFileSync(identity_file, qs.escape(data));
+            return data;
+        } catch (err) {
+            throw new Error(`Unable to write identity file to ${identity_file}`);
+        }
     }
 
     /**

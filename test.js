@@ -1,13 +1,6 @@
 'use strict';
-const fs = require('fs'),
-    path = require('path');
-const csv = require('csvtojson');
-csv({
-    noheader: true,
-    trim: true,
-})
-    .fromFile(`${__dirname}${path.sep}src${path.sep}countries.csv`)
-    .then((jsonObj) => {
-        console.log(jsonObj);
-    });
 
+const Registration = require('./src/registration');
+
+let w = new Registration('79930206295', true);
+console.log(w.identity);

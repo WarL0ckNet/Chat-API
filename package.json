@@ -14,7 +14,6 @@
     "API"
   ],
   "dependencies": {
-    "csvtojson": "^2.0.8",
     "readline-sync": "*"
   },
   "author": "Alex Filippov <main@warl0ck.net> (http://www.warl0ck.net)",
